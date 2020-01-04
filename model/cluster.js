@@ -7,6 +7,7 @@ const async = require('async');
 const config = require('../config');
 const _ = require('lodash');
 const net = require('net');
+const utils = require('../common/utils');
 
 const INSERT_SYSTEM_CLUSTER = `
   INSERT INTO hc_console_system_cluster
@@ -284,6 +285,71 @@ exports.getClusterCfgByCode = function (clusterCode) {
       token: opt.token
     };
   }
+};
+
+const SQL_QUERY_CLUSTER_SNAPSHORT = `
+  select 
+    cluster_code as clusterCode, info, md5, max(gmt_create) as gmtCreate
+  from 
+    hc_console_system_cluster_snapshort 
+  where 
+    cluster_code = ?
+  group by
+    gmt_create
+`;
+exports.getSnapshort = (clusterCode, cb) => {
+  db.query(SQL_QUERY_CLUSTER_SNAPSHORT, [clusterCode], (err, data) => {
+    if (err) {
+      return cb(err);
+    }
+    if (!data) {
+      return cb(new Error('not found'));
+    }
+    data[0].info = JSON.parse(data[0].info);
+    cb(null, data[0]);
+  });
+};
+
+const SQL_QUERY_CLUSTER_SNAPSHORTS = `
+  select 
+    cluster_code as clusterCode, info, md5, max(gmt_create)
+  from 
+    hc_console_system_cluster_snapshort 
+  where 
+    cluster_code in ?
+  group by
+    cluster_code
+`;
+exports.getSnapshorts = (clusterCode, cb) => {
+  let codes = Object.key(gClusterConfig);
+  db.query(SQL_QUERY_CLUSTER_SNAPSHORTS, [codes], (err, data) => {
+    if (err) {
+      return cb(err);
+    }
+    if (!data) {
+      return cb(null, []);
+    }
+    data.forEach((d) => {
+      d.status = JSON.parse(d.status);
+    });
+  });
+};
+
+const SQL_INSERT_CLUSTER_SNAPSHORT = `insert into hc_console_system_cluster_snapshort 
+(cluster_code, info, md5, user, gmt_create) 
+values 
+(?, ?, ?, ?, ?)`;
+exports.saveSnapshort = (obj, cb) => {
+  let info = JSON.stringify(obj.info);
+  let md5 = utils.md5(info);
+  let param = [
+    obj.clusterCode,
+    info,
+    md5,
+    obj.user,
+    new Date()
+  ];
+  db.query(SQL_INSERT_CLUSTER_SNAPSHORT, param, cb);
 };
 
 // TODO: 暂时放这里，后面所有初始化动作放一个文件夹中，前提是需要先改写sql初始化机制保证顺序执行
